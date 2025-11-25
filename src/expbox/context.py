@@ -1,4 +1,3 @@
-# src/expbox/context.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -82,9 +81,21 @@ class ExperimentMeta:
         UTC timestamp when the experiment was initialized (ISO 8601).
     finished_at:
         UTC timestamp when the experiment was finalized, if any.
+
     git_commit:
-        Git commit hash at the time of initialization (optional, not set by expbox).
-        TODO: In the future we might auto-populate this by calling `git`.
+        Legacy field for the git commit hash (for backward compatibility).
+        New code should use the `git` dict instead.
+    git:
+        Git-related metadata, e.g.
+        {
+          "repo_root": "...",
+          "project_relpath": "...",
+          "start": {...},
+          "last": {...},
+          "dirty_files": [...],
+          "remote": {...},
+        }
+
     config_path:
         Relative path (POSIX style) from the experiment root to the
         configuration snapshot file.
@@ -92,6 +103,10 @@ class ExperimentMeta:
         Selected logger backend: "none", "file", or "wandb".
     wandb_run_id:
         W&B run id, if any (expbox does not currently auto-populate this).
+
+    status:
+        Optional free-form status string, e.g. "completed" or "draft".
+
     env_note:
         Free-form note about the execution environment.
     final_note:
@@ -109,10 +124,15 @@ class ExperimentMeta:
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     finished_at: Optional[str] = None
 
-    git_commit: Optional[str] = None
+    # Git metadata
+    git_commit: Optional[str] = None  # legacy / compatibility
+    git: Dict[str, Any] = field(default_factory=dict)
+
     config_path: Optional[str] = None
     logger_backend: str = "none"
     wandb_run_id: Optional[str] = None
+
+    status: Optional[str] = None
 
     env_note: Optional[str] = None
     final_note: Optional[str] = None

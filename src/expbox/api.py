@@ -1,4 +1,3 @@
-# src/expbox/api.py
 from __future__ import annotations
 
 """
@@ -18,9 +17,10 @@ Design principles:
 - No hard dependency on specific loggers or tracking services.
 """
 
+import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional, Union
+from typing import Any, Callable, Dict, Mapping, Optional, Union
 
 from .config import ConfigLike, load_config, snapshot_config
 from .context import ExpContext, ExpPaths, ExperimentMeta
@@ -29,6 +29,219 @@ from .logger import BaseLogger, FileLogger, LoggerKind, NullLogger, WandbLogger
 from .meta_io import load_meta, save_meta
 
 IdGenerator = Callable[[str, Path], str]
+
+
+# ---------------------------------------------------------------------------
+# Git helpers
+# ---------------------------------------------------------------------------
+
+
+def _find_git_root(start: Path) -> Optional[Path]:
+    """
+    Walk up from `start` to find a `.git` directory.
+
+    Returns
+    -------
+    Path or None
+        Repository root if found, else None.
+    """
+    cur = start.resolve()
+    for p in (cur, *cur.parents):
+        if (p / ".git").exists():
+            return p
+    return None
+
+
+def _run_git(args: list[str], cwd: Path) -> Optional[str]:
+    """
+    Run a git command and return stdout (stripped), or None on failure.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+    except Exception:
+        return None
+
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def _get_git_status(repo_root: Path) -> Optional[Dict[str, Any]]:
+    """
+    Collect basic git status information for the repository.
+
+    Returns
+    -------
+    dict or None
+        {
+          "commit": str,
+          "branch": str or None,
+          "dirty": bool,
+          "dirty_files": [str, ...],
+          "remote": {
+            "name": "origin",
+            "url": "...",
+            "github_commit_url": "https://github.com/.../commit/<hash>"  # optional
+          } or None,
+        }
+    """
+    commit = _run_git(["rev-parse", "HEAD"], cwd=repo_root)
+    if not commit:
+        return None
+
+    branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_root)
+    status_out = _run_git(["status", "--porcelain"], cwd=repo_root) or ""
+    dirty = bool(status_out.strip())
+
+    dirty_files = []
+    for line in status_out.splitlines():
+        if not line.strip():
+            continue
+        # format: "XY path"
+        if len(line) > 3:
+            dirty_files.append(line[3:])
+        else:
+            dirty_files.append(line.strip())
+
+    remote_url = _run_git(["config", "--get", "remote.origin.url"], cwd=repo_root)
+    remote: Dict[str, Any] = {}
+    if remote_url:
+        remote["name"] = "origin"
+        remote["url"] = remote_url
+
+        commit_url: Optional[str] = None
+        if "github.com" in remote_url:
+            base: Optional[str] = None
+            if remote_url.startswith("git@github.com:"):
+                path = remote_url[len("git@github.com:") :]
+                if path.endswith(".git"):
+                    path = path[:-4]
+                base = f"https://github.com/{path}"
+            elif remote_url.startswith("https://github.com/") or remote_url.startswith(
+                "http://github.com/"
+            ):
+                base = remote_url
+                if base.endswith(".git"):
+                    base = base[:-4]
+            if base:
+                commit_url = f"{base}/commit/{commit}"
+
+        if commit_url:
+            remote["github_commit_url"] = commit_url
+
+    return {
+        "commit": commit,
+        "branch": branch,
+        "dirty": dirty,
+        "dirty_files": dirty_files,
+        "remote": remote or None,
+    }
+
+
+def _init_git_section() -> Dict[str, Any]:
+    """
+    Initialize the `git` section for ExperimentMeta at init_exp time.
+
+    - Uses current working directory to locate the repo.
+    - Records both `start` and initial `last` (same values).
+    """
+    start_path = Path.cwd()
+    repo_root = _find_git_root(start_path)
+    if repo_root is None:
+        return {}
+
+    status = _get_git_status(repo_root)
+    if status is None:
+        return {}
+
+    try:
+        project_relpath = str(start_path.relative_to(repo_root))
+    except ValueError:
+        project_relpath = None
+
+    now_iso = datetime.utcnow().isoformat()
+
+    git_section: Dict[str, Any] = {
+        "repo_root": str(repo_root),
+        "project_relpath": project_relpath,
+        "start": {
+            "commit": status["commit"],
+            "branch": status["branch"],
+            "dirty": status["dirty"],
+            "captured_at": now_iso,
+        },
+        "last": {
+            "commit": status["commit"],
+            "branch": status["branch"],
+            "dirty": status["dirty"],
+            "saved_at": None,
+        },
+        "dirty_files": status["dirty_files"],
+        "remote": status["remote"],
+    }
+    return git_section
+
+
+def _update_git_on_save(meta: ExperimentMeta) -> None:
+    """
+    Update the `git.last` section on each save_exp call.
+
+    - If repo_root is known, use it; otherwise try to rediscover.
+    - Does NOT create or push any commits.
+    """
+    try:
+        git_section: Dict[str, Any] = dict(meta.git) if meta.git else {}
+        repo_root_str = git_section.get("repo_root")
+        if repo_root_str:
+            repo_root = Path(repo_root_str)
+        else:
+            repo_root = _find_git_root(Path.cwd())
+            if repo_root is None:
+                return
+            git_section["repo_root"] = str(repo_root)
+
+        status = _get_git_status(repo_root)
+        if status is None:
+            return
+
+        last = dict(git_section.get("last") or {})
+        last.update(
+            {
+                "commit": status["commit"],
+                "branch": status["branch"],
+                "dirty": status["dirty"],
+                "saved_at": datetime.utcnow().isoformat(),
+            }
+        )
+        git_section["last"] = last
+        git_section["dirty_files"] = status["dirty_files"]
+        git_section["remote"] = status["remote"]
+
+        # If project_relpath is missing, try to fill it from current cwd.
+        if git_section.get("project_relpath") is None:
+            try:
+                git_section["project_relpath"] = str(Path.cwd().relative_to(repo_root))
+            except ValueError:
+                pass
+
+        meta.git = git_section
+        # Backward compatibility: keep git_commit in sync with last.commit
+        meta.git_commit = status["commit"]
+    except Exception:
+        # Git metadata should never break save_exp
+        return
+
+
+# ---------------------------------------------------------------------------
+# Logger helper
+# ---------------------------------------------------------------------------
 
 
 def _make_logger(
@@ -50,6 +263,11 @@ def _make_logger(
     if kind == "wandb":
         return WandbLogger(project=project, exp_id=exp_id, config=cfg)
     raise ValueError(f"Unknown logger kind: {kind}")
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 
 def init_exp(
@@ -77,7 +295,7 @@ def init_exp(
         - Creates `results/<exp_id>/` and its subdirectories.
         - Loads the configuration and saves a snapshot under artifacts/.
         - Initializes a logger backend.
-        - Writes an initial meta.json.
+        - Writes an initial meta.json (including Git metadata, if available).
 
     Parameters
     ----------
@@ -155,8 +373,24 @@ def init_exp(
         logger_backend=logger,
     )
 
+    # Git metadata at init
+    git_section = _init_git_section()
+    if git_section:
+        meta.git = git_section
+        # For compatibility / convenience, also set git_commit = start.commit
+        start_info = git_section.get("start") or {}
+        commit = start_info.get("commit")
+        if isinstance(commit, str):
+            meta.git_commit = commit
+
     # Logger
-    lg = _make_logger(logger, project=project, exp_id=exp_id, cfg=cfg, log_dir=paths.logs)
+    lg = _make_logger(
+        logger,
+        project=project,
+        exp_id=exp_id,
+        cfg=cfg,
+        log_dir=paths.logs,
+    )
 
     ctx = ExpContext(
         exp_id=exp_id,
@@ -236,9 +470,10 @@ def load_exp(
 
 def save_exp(ctx: ExpContext) -> None:
     """
-    Finalize an experiment.
+    Save (and optionally finalize) an experiment.
 
     This function:
+        - Updates Git metadata (`meta.git.last`) if a Git repo is found.
         - Sets `meta.finished_at` if it is not already set.
         - Closes the logger.
         - Writes meta.json to disk.
@@ -246,11 +481,14 @@ def save_exp(ctx: ExpContext) -> None:
     Parameters
     ----------
     ctx:
-        The experiment context to finalize.
+        The experiment context to save.
 
     TODO:
         - Allow registering user-defined "on_save" hooks for custom cleanup.
     """
+    # Update Git metadata first (best-effort, never raises)
+    _update_git_on_save(ctx.meta)
+
     if ctx.meta.finished_at is None:
         ctx.meta.finished_at = datetime.utcnow().isoformat()
 
