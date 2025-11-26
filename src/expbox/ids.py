@@ -34,8 +34,6 @@ Design notes
 - Implemented to be deterministic and side-effect free; no global state.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Literal, Optional
