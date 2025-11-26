@@ -23,9 +23,9 @@ xb.save(ctx)
 
 ---
 
-## 🚀 Features
+## Features
 
-### ✔ Git-aware, GitHub-ready
+### Git-aware, GitHub-ready
 
 * On `init` / `save`, expbox records:
 
@@ -35,12 +35,12 @@ xb.save(ctx)
   * remote `origin` URL
 * This makes **experiments inherently reproducible across machines and collaborators**.
 
-### ✔ Local-first, compatible with any environment
+### Local-first, compatible with any environment
 
 * Works the same on **laptop, Colab, on-prem GPU boxes, HPC (SLURM, MPI, DDP)**.
 * Uses a **rank-0 logging strategy**, avoiding write contention on shared filesystems (NFS / Lustre / GPFS).
 
-### ✔ Friendly with external tools
+### Friendly with external tools
 
 expbox is intentionally small, but integrates smoothly with:
 
@@ -49,7 +49,7 @@ expbox is intentionally small, but integrates smoothly with:
 * **MLflow** → simply push paths or metrics from `ctx.paths`
 * **GitHub** → commit only lightweight metadata and figures
 
-### ✔ A single directory per experiment
+### 1 directory, 1 experiment
 
 ```
 results/<exp_id>/
@@ -65,7 +65,7 @@ results/<exp_id>/
 
 ---
 
-## 📦 Installation
+## Installation
 
 ```bash
 pip install expbox
@@ -89,7 +89,7 @@ pytest
 
 ---
 
-## 🔧 Quick Start (Python)
+## Quick Start (Python)
 
 Below is a **minimal deep-learning-style loop** showing metrics logging and figure output.
 
@@ -130,7 +130,7 @@ xb.save(ctx)
 
 ---
 
-## 🧪 Quick Start (CLI)
+## Quick Start (CLI)
 
 ```bash
 # Create a new experiment
@@ -143,7 +143,7 @@ expbox save "$exp_id" --status done --final-note "completed"
 
 ---
 
-## 🧠 HPC / Distributed Training (rank-0 pattern)
+## HPC / Distributed Training (rank-0 pattern)
 
 expbox is safe on HPC clusters when **only rank 0** writes experiment files.
 
@@ -176,7 +176,7 @@ Works on:
 
 ---
 
-## 🗃 Git Integration & What to Commit
+## Git Integration & What to Commit
 
 **Recommended `.gitignore`:**
 
@@ -205,7 +205,7 @@ This keeps heavy models/logs local while GitHub stores the reproducibility metad
 
 ---
 
-## 🗂 External Tools
+## External Tools
 
 ### Notion / Obsidian
 
@@ -233,7 +233,7 @@ MLflow and expbox do **not** conflict.
 
 ---
 
-## 📘 More Documentation
+## More Documentation
 
 To keep the README short, detailed documentation is in:
 
@@ -242,13 +242,13 @@ To keep the README short, detailed documentation is in:
 
 ---
 
-## 📝 License
+## License
 
 MIT License.
 
 ---
 
-## 👤 Author
+## Author
 
 **Tadahaya Mizuno**
 tadahayamiz (at) gmail.com
