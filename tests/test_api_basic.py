@@ -73,3 +73,25 @@ def test_save_sets_finished_at(tmp_path: Path) -> None:
     # sanity check: ISO 8601-like
     dt = datetime.fromisoformat(ctx.meta.finished_at)
     assert isinstance(dt, datetime)
+
+
+def test_active_box_shortcuts(tmp_path: Path) -> None:
+    import os
+    os.chdir(tmp_path)
+
+    ctx = xb.init(
+        project="testproj",
+        config={"lr": 1e-3},
+        results_root=tmp_path,
+        logger="none",
+    )
+
+    # Active box 経由で同じ情報が取れるか
+    assert xb.exp_id == ctx.exp_id
+    assert xb.paths.root == ctx.paths.root
+    assert xb.meta.project == "testproj"
+    assert xb.config["lr"] == 1e-3
+
+    xb.meta.final_note = "done"
+    xb.save()  # ctx なしで保存
+    assert xb.meta.final_note == "done"

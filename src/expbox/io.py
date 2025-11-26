@@ -196,3 +196,66 @@ def ensure_experiment_dirs(root: Path) -> ExpPaths:
     ExpPaths
     """
     return ExpPaths.create(root)
+
+
+# ---------------------------------------------------------------------------
+# Project-level state: active experiment id
+# ---------------------------------------------------------------------------
+
+from typing import Optional  # すでに import 済みなら不要
+
+_ACTIVE_STATE_DIR = ".expbox"
+_ACTIVE_STATE_FILE = "active"
+
+
+def _get_project_root(start: Optional[Path] = None) -> Path:
+    """
+    Return the current project root.
+
+    For now this is simply the current working directory resolved.
+    If needed, this can be made smarter (e.g., walk up to find pyproject.toml).
+    """
+    if start is None:
+        start = Path.cwd()
+    return start.resolve()
+
+
+def _get_state_dir(project_root: Optional[Path] = None) -> Path:
+    """
+    Return the directory used to store project-level expbox state,
+    creating it if necessary.
+
+    Typically: <project_root>/.expbox
+    """
+    root = _get_project_root(project_root)
+    state_dir = root / _ACTIVE_STATE_DIR
+    state_dir.mkdir(parents=True, exist_ok=True)
+    return state_dir
+
+
+def set_active_exp_id(exp_id: str, project_root: Optional[Path] = None) -> None:
+    """
+    Persist the given experiment id as the active box for this project.
+
+    This writes `<project_root>/.expbox/active`.
+    """
+    state_dir = _get_state_dir(project_root)
+    path = state_dir / _ACTIVE_STATE_FILE
+    path.write_text(exp_id, encoding="utf-8")
+
+
+def get_active_exp_id(project_root: Optional[Path] = None) -> Optional[str]:
+    """
+    Read the active experiment id for this project, if any.
+
+    Returns
+    -------
+    str or None
+        The exp_id stored in `.expbox/active`, or None if not found.
+    """
+    state_dir = _get_state_dir(project_root)
+    path = state_dir / _ACTIVE_STATE_FILE
+    if not path.exists():
+        return None
+    text = path.read_text(encoding="utf-8").strip()
+    return text or None

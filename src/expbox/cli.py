@@ -3,9 +3,8 @@ from __future__ import annotations
 """
 Command-line interface for expbox.
 
-This module provides a thin CLI layer around the high-level API in
-:mod:`expbox.api`. It is intentionally minimal and uses only the
-standard library (argparse).
+This module provides a thin CLI layer around the high-level public API in
+:mod:`expbox` (top-level).
 
 Typical usage
 -------------
@@ -33,7 +32,12 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .api import init_exp, load_exp, save_exp
+from . import init as xb_init, load as xb_load, save as xb_save
+
+
+# ---------------------------------------------------------------------------
+# Common arguments
+# ---------------------------------------------------------------------------
 
 
 def _add_common_init_args(parser: argparse.ArgumentParser) -> None:
@@ -94,8 +98,19 @@ def _add_common_init_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Subcommands
+# ---------------------------------------------------------------------------
+
+
 def _cmd_init(args: argparse.Namespace) -> int:
-    ctx = init_exp(
+    """
+    Initialize a new experiment and print its exp_id.
+
+    Uses the top-level expbox.init(), which also records the active box
+    in `.expbox/active` for the current project.
+    """
+    ctx = xb_init(
         project=args.project,
         title=args.title,
         purpose=args.purpose,
@@ -111,13 +126,15 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 
 def _cmd_load(args: argparse.Namespace) -> int:
-    ctx = load_exp(
+    """
+    Load an experiment and print a JSON summary of its metadata.
+    """
+    ctx = xb_load(
         exp_id=args.exp_id,
         results_root=args.results_root,
         logger=args.logger,
     )
 
-    # Print a minimal JSON summary of meta.
     summary: Dict[str, Any] = {
         "exp_id": ctx.meta.exp_id,
         "project": ctx.meta.project,
@@ -135,19 +152,31 @@ def _cmd_load(args: argparse.Namespace) -> int:
 
 
 def _cmd_save(args: argparse.Namespace) -> int:
-    ctx = load_exp(
+    """
+    Mark an experiment as finished (or update its status) and save.
+
+    Implementation detail:
+    - We first xb_load() to construct a context and mark it as the active box.
+    - Then xb_save() is called without ctx, which uses the active box.
+    """
+    ctx = xb_load(
         exp_id=args.exp_id,
         results_root=args.results_root,
         logger=args.logger,
     )
-    save_exp(
-        ctx,
+
+    xb_save(
         status=args.status,
         final_note=args.final_note,
         update_git=not args.no_update_git,
     )
     print(f"Saved experiment: {ctx.meta.exp_id}")
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 def main(argv: Optional[list[str]] = None) -> int:
