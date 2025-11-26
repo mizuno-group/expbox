@@ -31,6 +31,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
+import os
+import platform
+import sys
 import subprocess
 
 from .core import ExpContext, ExpMeta
@@ -266,6 +269,74 @@ def _update_git_on_save(meta: ExpMeta) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Environment snapshot (best-effort, no hard dependency)
+# ---------------------------------------------------------------------------
+
+def _collect_env_info() -> Dict[str, Any]:
+    """
+    Collect a small, best-effort snapshot of the runtime environment.
+
+    This is intentionally limited to coarse information that is useful for
+    reproducibility but unlikely to leak secrets:
+
+    - OS / platform
+    - Python version and executable
+    - current working directory
+    - CUDA / GPU (via nvidia-smi if available)
+    - basic cluster hints (SLURM_* env vars)
+    """
+    info: Dict[str, Any] = {
+        "platform": platform.platform(),
+        "python_version": sys.version.splitlines()[0],
+        "python_executable": sys.executable,
+        "cwd": str(Path.cwd()),
+    }
+
+    # CUDA / GPU info (if nvidia-smi is available)
+    gpu: Optional[list[Dict[str, Optional[str]]]] = None
+    try:
+        out = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total",
+                "--format=csv,noheader",
+            ],
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+            text=True,
+        )
+        lines = [line.strip() for line in out.splitlines() if line.strip()]
+        if lines:
+            gpu = []
+            for line in lines:
+                # e.g. "NVIDIA RTX A6000, 49140 MiB"
+                parts = [p.strip() for p in line.split(",")]
+                gpu.append(
+                    {
+                        "name": parts[0],
+                        "memory": parts[1] if len(parts) > 1 else None,
+                    }
+                )
+    except Exception:
+        gpu = None
+
+    info["gpu"] = gpu
+    info["cuda_visible_devices"] = os.environ.get("CUDA_VISIBLE_DEVICES")
+
+    # Simple SLURM hints (if running on a cluster)
+    slurm = {
+        "job_id": os.environ.get("SLURM_JOB_ID"),
+        "ntasks": os.environ.get("SLURM_NTASKS"),
+        "nodelist": os.environ.get("SLURM_NODELIST"),
+    }
+    # すべて None なら不要なので省く
+    if any(slurm.values()):
+        info["slurm"] = slurm
+
+    return info
+
+
+# ---------------------------------------------------------------------------
 # Logger helpers
 # ---------------------------------------------------------------------------
 
@@ -419,9 +490,13 @@ def init_exp(
         if isinstance(c, str):
             git_commit = c
 
-    # 5) Metadata
+    # 5) Metadata (including environment snapshot)
     if not project:
         project = project_root.name
+    env_auto = _collect_env_info()
+    if extra_meta is None:
+        extra_meta = {}
+    extra_meta.setdefault("env_auto", env_auto)
 
     meta = ExpMeta(
         exp_id=exp_id,
@@ -434,7 +509,7 @@ def init_exp(
         logger_backend=logger,
         status=status,
         env_note=env_note,
-        extra=extra_meta or {},
+        extra=extra_meta,
     )
 
     # 6) Write meta.json to disk

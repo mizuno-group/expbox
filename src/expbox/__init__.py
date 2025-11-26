@@ -274,11 +274,15 @@ def __getattr__(name: str):
     - expbox.logger  -> active_ctx.logger
     - expbox.exp_id  -> active_ctx.exp_id
     - expbox.project -> active_ctx.project
+    - expbox.env     -> active_ctx.meta.extra["env_auto"]
     """
     if name in {"paths", "config", "meta", "logger", "exp_id", "project"}:
         ctx = _require_active()
         return getattr(ctx, name)
-    raise AttributeError(f"module 'expbox' has no attribute {name!r}")
+    if name == "env":
+        ctx = _require_active()
+        return (ctx.meta.extra or {}).get("env_auto", {})
+    raise AttributeError(...)
 
 
 __all__ = [

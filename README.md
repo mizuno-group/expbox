@@ -293,7 +293,9 @@ results/<exp_id>/figures/roc_curve.png
 * timestamps (`created_at`, `finished_at`)
 * git commits (`start_commit`, `last_commit`)
 * dirty files
-* environment note
+* environment info
+  * `xb.env` (auto-collected OS / Python / GPU / CUDA / SLURM snapshot)
+  * `xb.meta.env_note` (free-text, user-provided)
 * status
 * config snapshot path
 * logger backend
