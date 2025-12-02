@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "expbox"
 version = "0.3.0"
 description = "A lightweight experiment context & result management helper."
+readme = "README.md"
 authors = [
   {name = "Tadahaya Mizuno", email = "tadahaya@gmail.com"}
 ]
