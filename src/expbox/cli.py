@@ -210,9 +210,10 @@ def _cmd_load(args: argparse.Namespace) -> int:
     Load an experiment and print a JSON summary of its metadata.
     """
     ctx = xb_load(
-        exp_id=args.exp_id,
+        args.exp_id,
         results_root=args.results_root,
         logger=args.logger,
+        set_active=False,
     )
 
     summary: Dict[str, Any] = {
@@ -236,12 +237,21 @@ def _cmd_save(args: argparse.Namespace) -> int:
     """
     Save (update) an experiment's metadata.
 
-    This is a thin wrapper around :func:`expbox.save`.
+    This is a thin wrapper that reloads the experiment context from disk
+    and then delegates to the top-level `expbox.save(ctx, ...)` helper.
+    It does *not* rely on any in-process active context.
     """
-    xb_save(
-        exp_id=args.exp_id,
+    # Reload context in a stateless way
+    ctx = xb_load(
+        args.exp_id,
         results_root=args.results_root,
         logger=args.logger,
+        set_active=False,
+    )
+
+    # Update metadata
+    xb_save(
+        ctx,
         status=args.status,
         final_note=args.final_note,
     )

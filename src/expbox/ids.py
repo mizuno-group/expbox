@@ -28,10 +28,10 @@ Typical usage
 
 Design notes
 ------------
-- The default style is a compact datetime stamp: "YYMMDD-HHMM".
+- The default style is a compact datetime stamp with seconds: "YYMMDD-HHMMSS".
 - An optional prefix/suffix can be attached.
-- `link_style="kebab"` generates `"prefix-241125-1320-suffix"`.
-- Implemented to be deterministic and side-effect free; no global state.
+- `link_style="kebab"` generates `"prefix-241125-132045-suffix"`.
+- `link_style="snake"` generates `"prefix_241125-132045_suffix"`.
 """
 
 from dataclasses import dataclass
@@ -48,39 +48,27 @@ class IdGenerator:
     """
     Lightweight pluggable ID generator.
 
-    This is a small wrapper so that callers can inject their own
-    experiment ID policy (e.g., for tests or custom workflows)
-    without having to reimplement the entire function.
-
-    Parameters
-    ----------
-    fn:
-        Callable that returns a string ID when called with no arguments.
+    This is a small wrapper so that tests or advanced users can inject
+    their own ID generation policy, while the default implementation
+    remains simple and self-contained.
     """
 
-    fn: Callable[[], str]
+    func: Callable[[], str]
 
-    def __call__(self) -> str:
-        return self.fn()
+    def __call__(self) -> str:  # pragma: no cover - trivial
+        return self.func()
 
 
-def _link(a: Optional[str], b: Optional[str], *, style: LinkStyle) -> str:
+def _link(a: str, b: str, *, style: LinkStyle = "kebab") -> str:
     """
-    Join two ID segments using kebab-case or snake_case.
-
-    Examples
-    --------
-    >>> _link("pre", "mid", style="kebab")
-    'pre-mid'
-    >>> _link("pre", None, style="snake")
-    'pre'
+    Link two segments with either '-' (kebab) or '_' (snake).
     """
-    if not a:
-        return b or ""
-    if not b:
-        return a
-
-    sep = "-" if style == "kebab" else "_"
+    if style == "kebab":
+        sep = "-"
+    elif style == "snake":
+        sep = "_"
+    else:  # pragma: no cover - defensive
+        raise ValueError(f"Unsupported link style: {style!r}")
     return f"{a}{sep}{b}"
 
 
@@ -89,7 +77,7 @@ def generate_exp_id(
     style: IdStyle = "datetime",
     prefix: Optional[str] = None,
     suffix: Optional[str] = None,
-    datetime_fmt: str = "%y%m%d-%H%M",
+    datetime_fmt: str = "%y%m%d-%H%M%S",
     link_style: LinkStyle = "kebab",
     id_generator: Optional[IdGenerator] = None,
 ) -> str:
@@ -99,49 +87,53 @@ def generate_exp_id(
     Parameters
     ----------
     style:
-        ID style. The following styles are currently supported:
+        ID style. The following styles are currently implemented:
 
-        - "datetime":
-            Use a datetime stamp, e.g. "241125-1320" (YYMMDD-HHMM).
-        - "date":
-            Use a date stamp, e.g. "241125" (YYMMDD).
-        - "seq":
-            Reserved for future use (sequential id). Currently falls back
-            to datetime.
-        - "rand":
-            Reserved for future use (random id). Currently falls back
-            to datetime.
+        - "datetime": compact datetime stamp (default).
+        - "date": date-only stamp.
+        - "seq": reserved for future sequential IDs (currently same as datetime).
+        - "rand": reserved for future random IDs (currently same as datetime).
 
-        TODO:
-            Implement proper "seq" and "rand" strategies if needed.
     prefix:
-        Optional prefix string to attach before the main id.
+        Optional prefix string.
+
     suffix:
-        Optional suffix string to attach after the main id.
+        Optional suffix string.
+
     datetime_fmt:
-        Datetime format string used when style is "datetime" or "date".
+        Datetime format string passed to :func:`datetime.strftime`. The
+        default generates a compact "YYMMDD-HHMMSS" stamp.
+
     link_style:
-        How to join prefix / id / suffix, `"kebab"` or `"snake"`.
+        How to join prefix/base/suffix. "kebab" (`-`) or "snake" (`_`).
+
     id_generator:
-        Optional custom generator object. If provided, this takes
-        precedence and we ignore `style` and `datetime_fmt`.
+        Optional custom :class:`IdGenerator` for advanced use cases. If
+        provided, it overrides `style`/`datetime_fmt` and is used to generate
+        the base ID.
 
     Returns
     -------
     str
-        Newly generated experiment id.
+        Generated experiment id.
     """
+    # 1) Base ID
     if id_generator is not None:
         base_id = id_generator()
     else:
         now = datetime.utcnow()
-        if style in ("datetime", "date", "seq", "rand"):
+
+        if style == "datetime":
+            base_id = now.strftime(datetime_fmt)
+        elif style == "date":
+            base_id = now.strftime("%y%m%d")
+        elif style in ("seq", "rand"):
             # For now, treat seq/rand as datetime-based as well.
             base_id = now.strftime(datetime_fmt)
         else:  # pragma: no cover - defensive, should not happen in normal use
             raise ValueError(f"Unsupported id style: {style!r}")
 
-    # Attach optional prefix / suffix
+    # 2) Attach optional prefix / suffix
     full = base_id
     if prefix:
         full = _link(prefix, full, style=link_style)
