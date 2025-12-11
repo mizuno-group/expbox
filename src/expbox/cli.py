@@ -4,7 +4,7 @@ from __future__ import annotations
 Command-line interface for expbox.
 
 This module provides a thin CLI layer around the high-level public API in
-:mod:`expbox` (top-level).
+:mod:`expbox` (top-level) and export helpers in :mod:`expbox.tools`.
 
 Typical usage
 -------------
@@ -15,11 +15,15 @@ Initialize a new experiment:
 
 Load and inspect an experiment:
 
-    expbox load exp-241125-1320
+    expbox load EXP_ID
 
 Finalize an experiment (mark as done):
 
-    expbox save exp-241125-1320 --status done
+    expbox save EXP_ID --status done
+
+Export a CSV summary of all experiments:
+
+    expbox export-csv --results-root results --output expbox_experiments.csv
 
 Notes
 -----
@@ -30,9 +34,10 @@ Notes
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from . import init as xb_init, load as xb_load, save as xb_save
+from .tools import export_csv as tools_export_csv
 
 
 # ---------------------------------------------------------------------------
@@ -106,9 +111,6 @@ def _add_common_init_args(parser: argparse.ArgumentParser) -> None:
 def _cmd_init(args: argparse.Namespace) -> int:
     """
     Initialize a new experiment and print its exp_id.
-
-    Uses the top-level expbox.init(), which also records the active box
-    in `.expbox/active` for the current project.
     """
     ctx = xb_init(
         project=args.project,
@@ -154,10 +156,6 @@ def _cmd_load(args: argparse.Namespace) -> int:
 def _cmd_save(args: argparse.Namespace) -> int:
     """
     Mark an experiment as finished (or update its status) and save.
-
-    Implementation detail:
-    - We first xb_load() to construct a context and mark it as the active box.
-    - Then xb_save() is called without ctx, which uses the active box.
     """
     ctx = xb_load(
         exp_id=args.exp_id,
@@ -174,6 +172,26 @@ def _cmd_save(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_export_csv(args: argparse.Namespace) -> int:
+    """
+    Export a CSV summary of all experiments under a results root.
+
+    Thin wrapper around :func:`expbox.tools.export_csv`.
+    """
+    fields: Optional[List[str]] = None
+    if args.fields:
+        # Convert comma-separated fields → list
+        fields = [f.strip() for f in args.fields.split(",") if f.strip()]
+
+    out_path = tools_export_csv(
+        results_root=args.results_root,
+        csv_path=args.output,
+        fields=fields,
+    )
+    print(str(out_path))
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -182,17 +200,6 @@ def _cmd_save(args: argparse.Namespace) -> int:
 def main(argv: Optional[list[str]] = None) -> int:
     """
     CLI entry point.
-
-    Parameters
-    ----------
-    argv:
-        Optional list of arguments (excluding the program name). If None,
-        :data:`sys.argv[1:]` is used.
-
-    Returns
-    -------
-    int
-        Exit code (0 for success).
     """
     parser = argparse.ArgumentParser(prog="expbox", description="expbox CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -254,6 +261,34 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Do not refresh Git metadata on save.",
     )
     p_save.set_defaults(func=_cmd_save)
+
+    # export-csv
+    p_export = subparsers.add_parser(
+        "export-csv",
+        help="Export a CSV summary of all experiments under a results root.",
+    )
+    p_export.add_argument(
+        "--results-root",
+        type=str,
+        default="results",
+        help='Directory containing experiment boxes (default: "results").',
+    )
+    p_export.add_argument(
+        "--output",
+        type=str,
+        default="expbox_experiments.csv",
+        help='Path to the output CSV file (default: "expbox_experiments.csv").',
+    )
+    p_export.add_argument(
+        "--fields",
+        type=str,
+        default=None,
+        help=(
+            "Optional comma-separated list of fields to include in the CSV, "
+            'e.g. "exp_id,project,status". If omitted, all fields are included.'
+        ),
+    )
+    p_export.set_defaults(func=_cmd_export_csv)
 
     args = parser.parse_args(argv)
     return args.func(args)
