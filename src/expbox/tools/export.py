@@ -113,6 +113,8 @@ def flatten_index_record(record: Dict[str, Any]) -> Dict[str, Any]:
     row["git_last_commit"] = glast.get("commit")
     row["git_start_branch"] = gstart.get("branch")
     row["git_last_branch"] = glast.get("branch")
+    row["git_start_subject"] = gstart.get("subject")
+    row["git_last_subject"] = glast.get("subject")
 
     # dirty_files: optional (safe may omit it)
     dirty_files = record.get("dirty_files") or {}
@@ -190,12 +192,14 @@ def summarize_box(box_root: Path) -> Dict[str, Any]:
                 "commit": git_start.get("commit"),
                 "branch": git_start.get("branch"),
                 "dirty": git_start.get("dirty"),
+                "subject": git_start.get("subject"),
             },
             "last": {
                 "commit": git_last.get("commit"),
                 "branch": git_last.get("branch"),
                 "dirty": git_last.get("dirty"),
                 "saved_at": git_last.get("saved_at"),
+                "subject": git_last.get("subject"),
             },
             "remote": git_section.get("remote"),
         },

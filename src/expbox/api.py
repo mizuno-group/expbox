@@ -119,6 +119,7 @@ def _get_git_status(repo_root: Path) -> Optional[Dict[str, Any]]:
     if not commit:
         return None
 
+    subject = _run_git(["log", "-1", "--pretty=%s", "HEAD"], cwd=repo_root)
     branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_root)
     status_out = _run_git(["status", "--porcelain"], cwd=repo_root) or ""
     dirty = bool(status_out.strip())
@@ -165,6 +166,7 @@ def _get_git_status(repo_root: Path) -> Optional[Dict[str, Any]]:
         "dirty": dirty,
         "dirty_files": dirty_files,
         "remote": remote or None,
+        "subject": subject,
     }
 
 
@@ -199,12 +201,14 @@ def _init_git_section(project_root: Path) -> Dict[str, Any]:
             "branch": status["branch"],
             "dirty": status["dirty"],
             "captured_at": now_iso,
+            "subject": status["subject"],
         },
         "last": {
             "commit": status["commit"],
             "branch": status["branch"],
             "dirty": status["dirty"],
             "saved_at": None,
+            "subject": status["subject"],
         },
         "dirty_files": status["dirty_files"],
         "remote": status["remote"],
@@ -243,6 +247,7 @@ def _update_git_on_save(meta: ExpMeta) -> None:
                 "branch": status["branch"],
                 "dirty": status["dirty"],
                 "saved_at": datetime.now(timezone.utc).isoformat(),
+                "subject": status["subject"],
             }
         )
         git_section["last"] = last
@@ -494,12 +499,14 @@ def _build_index_record(ctx: ExpContext) -> Dict[str, Any]:
                 "commit": git_start.get("commit"),
                 "branch": git_start.get("branch"),
                 "dirty": git_start.get("dirty"),
+                "subject": git_start.get("subject"),
             },
             "last": {
                 "commit": git_last.get("commit"),
                 "branch": git_last.get("branch"),
                 "dirty": git_last.get("dirty"),
                 "saved_at": git_last.get("saved_at"),
+                "subject": git_start.get("subject"),
             },
             "remote": git_section.get("remote"),
         },
