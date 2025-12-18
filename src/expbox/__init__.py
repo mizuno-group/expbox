@@ -57,14 +57,32 @@ _active_ctx: Optional[ExpContext] = None
 
 
 def _require_active() -> ExpContext:
-    """
-    Return the currently active experiment context, or raise a helpful error.
-    """
     if _active_ctx is None:
         raise RuntimeError(
-            "No active experiment box. "
-            "Call expbox.init(...) or expbox.load(...) first."
+            "No active experiment box.\n"
+            "Run one of:\n"
+            "  - expbox.init(...)\n"
+            "  - expbox.load()          # resume from .expbox/active\n"
+            "  - expbox.load('<exp_id>')\n"
         )
+
+    # --- safety: validate the active context points to a real box ---
+    exp_root = _active_ctx.paths.root
+    meta_path = exp_root / "meta.json"
+    if not exp_root.exists() or not meta_path.exists():
+        # Optional: clear in-memory active to avoid repeated confusion
+        # global _active_ctx
+        # _active_ctx = None
+        raise RuntimeError(
+            "Active experiment is invalid or missing on disk.\n"
+            f"  active exp_id: {_active_ctx.exp_id}\n"
+            f"  expected path: {exp_root}\n\n"
+            "Next steps:\n"
+            "  - expbox.init(...)              # start a new box\n"
+            "  - expbox.load('<exp_id>')       # resume a specific existing box\n"
+            "  - expbox.load()                 # resume from .expbox/active (only if it is valid)\n"
+        )
+
     return _active_ctx
 
 
